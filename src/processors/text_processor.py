@@ -45,3 +45,28 @@ def process_text(text: str) -> Dict:
         "hostnames": hostnames,
         "llm_analysis": llm_analysis
     }
+
+def process_writeup_chunk(chunk: Dict) -> Dict:
+    """Process a single chunk from a writeup"""
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {
+                "role": "system",
+                "content": "Extract security-relevant information from this writeup section. Format as JSON with hosts, ports, services, and vulnerabilities."
+            },
+            {
+                "role": "user",
+                "content": chunk['content']
+            }
+        ],
+        temperature=0
+    )
+    
+    return {
+        "chunk_id": chunk['id'],
+        "source_file": chunk['source_file'],
+        "analysis": response.choices[0].message.content
+    }

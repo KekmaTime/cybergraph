@@ -1,3 +1,4 @@
+from sre_parse import State
 from typing import Dict, Union, List, Any
 from langgraph.graph import Graph, StateGraph
 from langchain.prompts import PromptTemplate
@@ -35,10 +36,9 @@ def create_pipeline():
                 # Process text input
                 extracted_info = process_text(input_data)
             elif isinstance(input_data, dict) and "image_path" in input_data:
-                # Process image input
-                extracted_info = process_image(input_data["image_path"])
-                # Parse JSON string response from GPT-4 Vision
-                extracted_info = json.loads(extracted_info)
+                # Process image input with context if available
+                context = input_data.get("context", "")
+                extracted_info = process_image(input_data["image_path"], context)
             else:
                 raise ValueError("Invalid input format")
             
