@@ -1,3 +1,5 @@
 poetry.lock
 __pycache__
-raw
+.env
+data/processed/*
+data/raw/*
