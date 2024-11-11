@@ -1,5 +1,7 @@
 poetry.lock
 __pycache__
 .env
-data/processed/*
-data/raw/*
+data/chroma
+data/processed
+data/raw
+data/test

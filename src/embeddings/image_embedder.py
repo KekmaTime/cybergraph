@@ -4,110 +4,96 @@ from chromadb.utils import embedding_functions
 from openai import OpenAI
 import json
 import base64
-from typing import Dict, List
+from typing import Dict
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 def create_image_embedding(image_path: str, context: str = "") -> Dict:
-    """Create embedding for an image using GPT-4 Vision"""
+    """Create embedding for an image using GPT-4-Vision mini"""
+    if not Path(image_path).exists():
+        print(f"Warning: Image not found: {image_path}")
+        return None
+        
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
-    # Read and encode image
-    with open(image_path, "rb") as image_file:
-        base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-    
-    # Get embedding with context
-    response = client.chat.completions.create(
-        model="gpt-4-vision-preview",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"Context: {context}\nAnalyze this security-related image and describe key details about hosts, ports, services, and vulnerabilities."
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_image}"
+    try:
+        with open(image_path, "rb") as image_file:
+            base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Context: {context}\nAnalyze this security-related image and describe key details about hosts, ports, services, and vulnerabilities shown."},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{base64_image}",
+                                "detail": "low"
+                            }
                         }
-                    }
-                ]
-            }
-        ],
-        max_tokens=300
-    )
-    
-    return {
-        "description": response.choices[0].message.content,
-        "image_path": image_path,
-        "context": context
-    }
+                    ]
+                }
+            ],
+            max_tokens=300
+        )
+        
+        return {
+            "description": response.choices[0].message.content,
+            "image_path": image_path,
+            "context": context
+        }
+    except Exception as e:
+        print(f"Error processing {image_path}: {str(e)}")
+        return None
 
-def setup_chroma_client():
-    """Setup ChromaDB with OpenAI embeddings"""
-    client = chromadb.Client()
+def process_images_to_chroma():
+    client = chromadb.PersistentClient(path="data/chroma")
     
-    # Create collections
-    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+    embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
         api_key=os.getenv("OPENAI_API_KEY"),
         model_name="text-embedding-3-small"
     )
     
-    images_collection = client.create_collection(
+    collection = client.create_collection(
         name="security_images",
-        embedding_function=openai_ef
+        embedding_function=embedding_fn
     )
     
-    text_collection = client.create_collection(
-        name="security_text",
-        embedding_function=openai_ef
-    )
-    
-    return images_collection, text_collection
-
-def process_directory(base_dir: Path):
-    """Process all images and text in the processed directory"""
-    images_collection, text_collection = setup_chroma_client()
-    
-    # Process images
-    images_dir = base_dir / "processed" / "images"
-    metadata_file = images_dir / "metadata.jsonl"
+    metadata_file = Path("data/processed/images/metadata.jsonl")
     
     if metadata_file.exists():
         with open(metadata_file) as f:
             for line in f:
-                img_data = json.loads(line)
-                if "processed_path" in img_data:
+                if line.strip():
+                    img_data = json.loads(line)
+                    
+                    # Use local_path instead of path
+                    if not Path(img_data["local_path"]).exists():
+                        print(f"Skipping missing image: {img_data['local_path']}")
+                        continue
+                        
                     embedding = create_image_embedding(
-                        img_data["processed_path"],
+                        img_data["local_path"],
                         img_data.get("context", "")
                     )
                     
-                    images_collection.add(
-                        documents=[embedding["description"]],
-                        metadatas=[{
-                            "source_file": img_data["source_file"],
-                            "image_path": img_data["processed_path"],
-                            "context": img_data.get("context", "")
-                        }],
-                        ids=[img_data["id"]]
-                    )
-    
-    # Process text chunks
-    text_file = base_dir / "processed" / "text" / "chunks.jsonl"
-    if text_file.exists():
-        with open(text_file) as f:
-            for line in f:
-                chunk = json.loads(line)
-                text_collection.add(
-                    documents=[chunk["content"]],
-                    metadatas=[{
-                        "type": chunk["type"],
-                        "source_file": chunk["source_file"]
-                    }],
-                    ids=[chunk["id"]]
-                )
+                    if embedding:
+                        collection.add(
+                            documents=[embedding["description"]],
+                            metadatas=[{
+                                "source": img_data["source_file"],
+                                "image_path": img_data["local_path"],
+                                "title": img_data["title"],
+                                "url": img_data["url"]
+                            }],
+                            ids=[img_data["local_path"]]
+                        )
+                        print(f"Processed: {img_data['local_path']}")
+
+if __name__ == "__main__":
+    process_images_to_chroma()
