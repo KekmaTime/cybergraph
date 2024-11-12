@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 import json
 import base64
+from xml.dom.minidom import Document
 from PIL import Image
 import io
 import aiohttp
@@ -32,6 +33,12 @@ class SecurityImageProcessor:
             max_tokens=1000,
             temperature=0
         )
+        self.logger = logging.getLogger(__name__)
+        self.metrics = {
+            "image_processing_time": [],
+            "graph_storage_time": [],
+            "vector_storage_time": []
+        }
     
     async def _download_image(self, url: str, save_path: Path) -> bool:
         """Download image from GitHub URL"""
@@ -87,25 +94,25 @@ class SecurityImageProcessor:
         
         return images
     
-    def process_and_store_image(self, image_path: str, context: str = "") -> Optional[str]:
+    async def process_and_store_image(self, image_path: str, context: str = "") -> Optional[str]:
         """Process image and store results in graph database."""
         try:
             # Get image analysis
-            analysis = self._analyze_image(image_path, context)
+            analysis = await self._analyze_image(image_path, context)
             if not analysis:
                 return None
             
             # Create image node and relationships
-            image_id = self._store_in_graph(analysis, image_path)
+            image_id = await self._store_in_graph(analysis, image_path)
             
             # Add to vector store for searchability
-            self._store_in_vector(analysis, image_id)
+            await self._store_in_vector(analysis, image_id)
             
             return image_id
             
         except Exception as e:
             logging.error(f"Error processing image {image_path}: {str(e)}")
-            return None
+            Documentone
     
     def _analyze_image(self, image_path: str, context: str) -> Optional[Dict]:
         """Analyze image using GPT-4 Vision."""
@@ -138,7 +145,7 @@ class SecurityImageProcessor:
             return None
     
     def _store_in_graph(self, analysis: Dict, image_path: str) -> str:
-        """Store image analysis in Neo4j graph."""
+        """Enhanced graph storage with relationship processing."""
         query = """
         CREATE (i:Image {
             id: randomUUID(),
@@ -152,10 +159,18 @@ class SecurityImageProcessor:
         SET h += host.properties
         MERGE (h)-[:SHOWN_IN]->(i)
         WITH i, h
+        UNWIND $ports as port
+        MERGE (p:Port {id: h.id + ':' + toString(port.number)})
+        SET p += port
+        MERGE (h)-[:HAS_PORT]->(p)
+        WITH i, p
+        UNWIND $services as service
+        MERGE (s:Service {id: p.id + ':' + service.name})
+        SET s += service
+        MERGE (p)-[:RUNS_SERVICE]->(s)
+        WITH i, h
         UNWIND $vulnerabilities as vuln
-        MERGE (v:Vulnerability {
-            id: h.id + ':' + vuln.name
-        })
+        MERGE (v:Vulnerability {id: h.id + ':' + vuln.name})
         SET v += vuln
         MERGE (h)-[:HAS_VULNERABILITY]->(v)
         RETURN i.id as image_id
@@ -168,6 +183,8 @@ class SecurityImageProcessor:
                 "timestamp": datetime.now().isoformat(),
                 "description": analysis["description"],
                 "hosts": analysis["hosts"],
+                "ports": analysis["ports"],
+                "services": analysis["services"],
                 "vulnerabilities": analysis["vulnerabilities"]
             }
         )
@@ -208,3 +225,64 @@ class SecurityImageProcessor:
             prompt = f"Context: {context}\n\n{prompt}"
         
         return prompt
+    
+    def _encode_image(self, image_path: str) -> str:
+        """Encode image to base64 string."""
+        with Image.open(image_path) as image:
+            buffered = io.BytesIO()
+            image.save(buffered, format=image.format or "JPEG")
+            return base64.b64encode(buffered.getvalue()).decode()
+    
+    def update_image_analysis(self, image_path: str, context: str = "") -> Optional[str]:
+        """Update existing image analysis with version tracking."""
+        try:
+            analysis = self._analyze_image(image_path, context)
+            if not analysis:
+                return None
+                
+            # Use GraphBuilder's update mechanism
+            self.graph_builder.update_security_data({
+                "image_path": image_path,
+                "analysis": analysis,
+                "last_check": datetime.now().isoformat()
+            }, "image_analysis")
+            
+            return image_path
+            
+        except Exception as e:
+            logging.error(f"Error updating image analysis {image_path}: {str(e)}")
+            return None
+    
+    async def create_image_embedding(self, image_path: str, context: str = "") -> Optional[Dict]:
+        """Create embeddings for image analysis results."""
+        try:
+            analysis = await self._analyze_image(image_path, context)
+            if not analysis:
+                return None
+                
+            return {
+                "description": analysis["description"],
+                "analysis": analysis
+            }
+            
+        except Exception as e:
+            logging.error(f"Error creating image embedding: {str(e)}")
+            return None
+    
+    async def process_markdown_content(self, file_path: Path) -> Optional[Dict]:
+        """Process markdown content and extract metadata."""
+        try:
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
+                
+            return {
+                "content": content,
+                "metadata": {
+                    "source": str(file_path),
+                    "type": "markdown",
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
+        except Exception as e:
+            logging.error(f"Error processing markdown {file_path}: {str(e)}")
+            return None
