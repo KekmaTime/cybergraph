@@ -29,7 +29,7 @@ def process_image(image_path: str, context: str = "") -> Dict:
     prompt += "Extract key information about hosts, ports, services, and potential vulnerabilities. Format the response as JSON with the following structure: {hosts: [], ports: [], services: [], vulnerabilities: []}"
     
     response = client.chat.completions.create(
-        model="gpt-4-vision-preview",
+        model="gpt-4o-mini",
         messages=[
             {
                 "role": "user",

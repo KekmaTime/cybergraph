@@ -19,7 +19,7 @@ def verify_chroma_collection():
     
     try:
         collection = client.get_collection(
-            name="security_images",
+            name="security_content",
             embedding_function=embedding_fn
         )
         
@@ -43,7 +43,7 @@ def verify_chroma_collection():
         print(f"\nTotal items in collection: {len(results['documents'])}")
         
     except ValueError:
-        print("Collection 'security_images' not found. Run the embedder first.")
+        print("Collection 'security_content' not found. Run the embedder first.")
 
 if __name__ == "__main__":
     verify_chroma_collection()

@@ -19,7 +19,7 @@ def process_text(text: str) -> Dict:
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o-mini",
         messages=[
             {
                 "role": "system",
@@ -51,7 +51,7 @@ def process_writeup_chunk(chunk: Dict) -> Dict:
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o-mini",
         messages=[
             {
                 "role": "system",
